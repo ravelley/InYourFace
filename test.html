@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<title>Webex</title>
+		<meta charset="utf-8">
+		<style>
+      body {
+        background : url("./media/webex.png") no-repeat;
+      }
+
+      #container {
+        position : absolute;
+        left : 1021px;
+        top : 105px;
+      }
+
+      #overlay {
+        position : absolute;
+        left : 0;
+        top : 0;
+      }
+
+      #emotion_container {
+        position:absolute;
+        left : 1020px;
+        top : 500px;
+        width : 420px;
+      }
+
+      #emotion_chart {
+        margin : 0 auto;
+        width : 400px;
+      }
+
+      #rating_bar {
+        background: -webkit-linear-gradient(left, red, yellow, green); /* For Safari 5.1 to 6.0 */
+        background: -o-linear-gradient(right, red, yellow, green); /* For Opera 11.1 to 12.0 */
+        background: -moz-linear-gradient(right, red, yellow, green); /* For Firefox 3.6 to 15 */
+        background: linear-gradient(to right, red, yellow, green); /* Standard syntax (must be last) */
+        margin : 0 auto;
+        height : 20px;
+        width : 400px;
+        position : absolute;
+        left : 1020px;
+        top : 600px;
+      }
+
+      #triangle {
+        background : url("./media/triangle.png") no-repeat;
+        background-size : 100% 100%;
+        height: 10px;
+        width: 10px;
+        position : absolute;
+        left : 1215px;
+        top : 620px;
+      }
+
+      /* d3 */
+      .bar {
+        fill : steelblue;
+        fill-opacity : .9;
+      }
+
+		</style>
+	</head>
+	<body>
+		<script src="./js/utils.js"></script>
+		<script src="./js/clmtrackr.js"></script>
+    <script src="./models/model_pca_20_svm_emotionDetection.js"></script>
+    <script src="./examples/js/d3.min.js"></script>
+    <script src="./examples/js/emotion_classifier.js"></script>
+    <script src="./examples/js/emotionmodel.js"></script>
+		<div id="content">
+      <div id="container">
+        <video id="video" width="420" height="315" preload="auto" loop>
+        </video>
+        <canvas id="overlay" width="420" height="315"></canvas>
+      </div>
+      <div id="emotion_container">
+        <div id='emotion_chart'></div>
+      </div>
+      <div id="rating_bar"></div>
+      <div id="triangle"></div>
+			<script>
+				var vid = document.getElementById('video');
+        var overlay = document.getElementById('overlay');
+        var overlayCC = overlay.getContext('2d');
+        
+        var ctracker = new clm.tracker({useWebGL : true});
+        ctracker.init(pModel);
+
+				navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+        window.URL = window.URL || window.webkitURL || window.msURL || window.mozURL;
+
+        // check for camerasupport
+        if (navigator.getUserMedia) {
+          // set up stream
+          
+          var videoSelector = { video : true };
+          if (window.navigator.appVersion.match(/Chrome\/(.*?) /)) {
+            var chromeVersion = parseInt(window.navigator.appVersion.match(/Chrome\/(\d+)\./)[1], 10);
+            if (chromeVersion < 20) {
+              videoSelector = "video";
+            }
+          };
+        
+          navigator.getUserMedia(videoSelector, function( stream ) {
+            if (vid.mozCaptureStream) {
+              vid.mozSrcObject = stream;
+            } else {
+              vid.src = (window.URL && window.URL.createObjectURL(stream)) || stream;
+            }
+            vid.play();
+          }, function() {
+            container.innerHTML("Cannot use webcam");
+          });
+        } else
+            container.innerHTML("Cannot use webcam");
+
+        vid.addEventListener('canplay', startVideo, false);
+        
+        function startVideo() {
+          // start tracking
+          ctracker.start(vid);
+          // start loop to draw face
+          drawLoop();
+        }
+        
+        function drawLoop() {
+          requestAnimFrame(drawLoop);
+          overlayCC.clearRect(0, 0, 420, 315);
+          //psrElement.innerHTML = "score :" + ctrack.getScore().toFixed(4);
+          if (ctracker.getCurrentPosition()) {
+            ctracker.draw(overlay);
+          }
+          var cp = ctracker.getCurrentParameters();
+          
+          var er = ec.meanPredict(cp);
+          if (er) {
+            updateData(er);
+          }
+        }
+        
+        var ec = new emotionClassifier();
+        ec.init(emotionModel);
+        var emotionData = ec.getBlank();  
+        
+        /************ d3 code for barchart *****************/
+
+        var margin = {top : 20, right : 20, bottom : 10, left : 40},
+          width = 400 - margin.left - margin.right,
+          height = 100 - margin.top - margin.bottom;
+
+        var barWidth = 30;
+
+        var formatPercent = d3.format(".0%");
+        
+        var x = d3.scale.linear()
+          .domain([0, ec.getEmotions().length]).range([margin.left, width+margin.left]);
+
+        var y = d3.scale.linear()
+          .domain([0,1]).range([0, height]);
+
+        var svg = d3.select("#emotion_chart").append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+        
+        svg.selectAll("rect").
+          data(emotionData).
+          enter().
+          append("svg:rect").
+          attr("x", function(datum, index) { return x(index); }).
+          attr("y", function(datum) { return height - y(datum.value); }).
+          attr("height", function(datum) { return y(datum.value); }).
+          attr("width", barWidth).
+          attr("fill", "#2d578b");
+
+        svg.selectAll("text.labels").
+          data(emotionData).
+          enter().
+          append("svg:text").
+          attr("x", function(datum, index) { return x(index) + barWidth; }).
+          attr("y", function(datum) { return height - y(datum.value); }).
+          attr("dx", -barWidth/2).
+          attr("dy", "1.2em").
+          attr("text-anchor", "middle").
+          text(function(datum) { return datum.value;}).
+          attr("fill", "white").
+          attr("class", "labels");
+        
+        svg.selectAll("text.yAxis").
+          data(emotionData).
+          enter().append("svg:text").
+          attr("x", function(datum, index) { return x(index) + barWidth; }).
+          attr("y", height).
+          attr("dx", -barWidth/2).
+          attr("text-anchor", "middle").
+          attr("style", "font-size: 12").
+          text(function(datum) { return datum.emotion;}).
+          attr("transform", "translate(0, 18)").
+          attr("class", "yAxis");
+
+        function updateData(data) {
+          var positive = 0, negative = 0;
+          for(var i=0;i<data.length;i++){
+            var obj = data[i], pos = false, neg = false;
+            for(var key in obj){
+                var attrName = key;
+                var attrValue = obj[key];
+                //console.log(attrName + ': ' + attrValue);
+                if(attrName === "emotion") {
+                  if(attrValue === "happy" || attrValue === "surprised") {
+                    pos = true;
+                    neg = false;
+                  }
+                  if(attrValue === "sad" || attrValue === "angry") {
+                    neg = true;
+                    pos = false;
+                  }
+                }
+                else if(attrName === "value") {
+                  if(pos)
+                    positive += attrValue;
+                  else if(neg)
+                    negative += attrValue;
+                }
+            }
+            //positive = positive/2;
+            //negative = negative/2;
+          }
+          var rating = positive - negative;
+          //console.log(rating);
+
+          var triangle = document.getElementById('triangle');
+          triangle.style.left = (1215 + rating * 100) + 'px';
+
+          // update
+          var rects = svg.selectAll("rect")
+            .data(data)
+            .attr("y", function(datum) { return height - y(datum.value); })
+            .attr("height", function(datum) { return y(datum.value); });
+          var texts = svg.selectAll("text.labels")
+            .data(data)
+            .attr("y", function(datum) { return height - y(datum.value); })
+            .text(function(datum) { return datum.value.toFixed(1);});
+
+          // enter 
+          rects.enter().append("svg:rect");
+          texts.enter().append("svg:text");
+
+          // exit
+          rects.exit().remove();
+          texts.exit().remove();
+        }
+			</script>
+		</div>
+	</body>
+</html>
