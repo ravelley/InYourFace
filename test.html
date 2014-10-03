@@ -112,10 +112,10 @@
             }
             vid.play();
           }, function() {
-            container.innerHTML("Cannot use webcam");
+            document.getElementById('container').innerHTML = "getUserMedia not supported";
           });
         } else
-            container.innerHTML("Cannot use webcam");
+            document.getElementById('container').innerHTML = "getUserMedia not supported";
 
         vid.addEventListener('canplay', startVideo, false);
         
@@ -203,36 +203,33 @@
         function updateData(data) {
           var positive = 0, negative = 0;
           for(var i=0;i<data.length;i++){
-            var obj = data[i], pos = false, neg = false;
+            var obj = data[i], pos = true, ignore = false
             for(var key in obj){
                 var attrName = key;
                 var attrValue = obj[key];
                 //console.log(attrName + ': ' + attrValue);
                 if(attrName === "emotion") {
-                  if(attrValue === "happy" || attrValue === "surprised") {
-                    pos = true;
-                    neg = false;
-                  }
-                  if(attrValue === "sad" || attrValue === "angry" || attrValue === "disgusted" || attrValue === "fear") {
-                    neg = true;
+                  if(attrValue === "angry" || attrValue === "disgusted") {
                     pos = false;
                   }
+                  else if(attrValue === "sad" || attrValue === "fear") {
+                    ignore = true;
+                  }
                 }
-                else if(attrName === "value") {
+                else if(attrName === "value" && !ignore) {
                   if(pos)
-                    positive += attrValue;
-                  else if(neg)
-                    negative += attrValue;
+                    positive = positive + attrValue;
+                  else
+                    negative = negative + attrValue;
                 }
             }
-            //positive = positive/2;
-            //negative = negative/2;
           }
+          positive = positive/2;
+          negative = negative/2;
           var rating = positive - negative;
-          //console.log(rating);
 
           var triangle = document.getElementById('triangle');
-          triangle.style.left = (1215 + rating * 100) + 'px';
+          triangle.style.left = (1215 + rating * 200) + 'px';
 
           // update
           var rects = svg.selectAll("rect")
